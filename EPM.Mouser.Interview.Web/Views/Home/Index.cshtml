@@ -1,0 +1,58 @@
+﻿@model IEnumerable<EPM.Mouser.Interview.Web.ViewModels.ProductViewModel>
+
+@{
+    ViewData["Title"] = "Test Page";
+}
+
+
+<h1>In Stock items</h1>
+<p>&nbsp;</p>
+<table class="table">
+    <thead class="table-dark">
+        <tr>
+            <th>
+                Action
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Name)
+            </th>
+            <th>
+                Total Amount In Stock
+            </th>
+            <th>
+                Available Quantity
+            </th>
+
+        </tr>
+    </thead>
+<tbody>
+@foreach (var item in Model)
+{
+    <tr>
+        <td>
+            @Html.ActionLink("action =>", "Product", new { id=item.Id })
+        </td>
+        <td>
+            @Html.DisplayFor(modelItem => item.Name)
+        </td>
+        <td>
+            @Html.DisplayFor(modelItem => item.InStockQuantity)
+        </td>
+        @switch (@item.InStockQuantity - item.ReservedQuantity)
+        {
+            case < 0:
+                <td class="table-danger">@(item.InStockQuantity - item.ReservedQuantity)</td>
+                break;
+
+            case < 5:
+                <td class="table-warning">@(item.InStockQuantity - item.ReservedQuantity)</td>
+                break;
+
+            default:
+                <td>@(item.InStockQuantity - item.ReservedQuantity)</td>
+                break;
+        }
+    </tr>
+}
+</tbody>
+</table>
