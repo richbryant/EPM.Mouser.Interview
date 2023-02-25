@@ -1,137 +1,41 @@
 # Mouser/EPM Tech assessment
 
-The solution is written in VS2022 and .Net6
+The documentation asks what I'd change and where and why; well there's a few things.
 
-There are two controllers that need completing
- - WarehouseApi
-    - There comments that document the required actions/endpoints
- - HomeController
-    - Check the index view for the controller to see whats requested 
+First of all, which I've implemented, was to include Swashbuckle for aspnetcore so that the controllers are easy to test and debug.
 
-A DLL has been provided (EPM.Mouser.Interview.Data) which provides a data repo and some models
-The data layer is 'faked' and initialized on startup so don't expect the same data between debug sessions (but it is persisted between requests).
+Second, I'd want some unit tests, which given the current structure of the project isn't really possible. The requirements (which are very clear, thanks for that) state the types to be used and those are already provided in the referenced DLL. I understand why but also, it's generally bad practise to expost internal types like that and for preference I'd have gone with DTOs and C# Record types. However, this would not fulfil the brief, so...
+
+Next, there's logic in the controllers. Normally I wouldn't do this - in point of fact, normally I'd use [LanguageExt by Paul Louth](https://github.com/louthy/language-ext) so that I had nice Functional pipelines with elevated types everywhere and a set of extension methods for splitting those down to unsafe types at application boundaries, such as controllers or on input and output from the data storage mechanism, but again this would not fulfil the brief.
+
+However, it does mean that each part of the pipeline is extremely easy to unit test. Given the requirement to use provided types and DLL, I can't really unit test at all; I'd be stuck with integration tests and although those have their place, that place isn't really development as such.
+
+Normally, my controllers look a lot more like this - 
+
+```csharp
+    [Route("api/[controller]")]
+    [ApiController]
+    public class NugetController : ControllerBase
+    {
+        private readonly INugetService _nugetService;
+
+        public NugetController(INugetService nugetService) => _nugetService = nugetService;
 
 
-Document any questions you'd ask and then also put your assumptions (in lieu of asking the questions).  Also highlight any improvements you've made to the orgional requirements.'
-Feel free to also suggest what else could be done out side the scope of the requested changes.
-Also document any enhancements you would apply.
-
-
-
-## Definition for EPM.Mouser.Interview.Data.IWarehouseRepository
+        [HttpGet("{term}")]
+        public async Task<IActionResult> GetNugetResults(string term) =>
+            await _nugetService.TryGetNugetPackagesAsync(term)
+                .ToActionResult();
 ```
-public interface IWarehouseRepository
-{
-    /// <summary>
-    /// Gets the order for the given id
-    /// </summary>
-    /// <param name="id">The id of the product.</param>
-    Task<Product?> Get(long id);
 
-    /// <summary>
-    /// Lists all products.
-    /// </summary>
-    Task<List<Product>> List();
+Which you can find in my [Reactive UI Compelling Example](https://github.com/richbryant/ReactiveUI.CompellingExample) if you're interested, along with a set of extension methods for making that nice `ToActionResult()` bit work.
 
-    /// <summary>
-    /// Queries the specified product data and returns a matching list.
-    /// </summary>
-    /// <param name="query">function to apply as a query against the data</param>
-    Task<List<Product>> Query(Func<Product, bool> query);
+My last real issue - apart from having to remember how to use MVC at all, it's been _ages_ - is with the bit about making product names unique. I've done with an extension method and unfortunately, the neatest way to do this is to make it recursive over the entire list of product names. While this works, it absolutely doesn't scale. It's fine for 100 and maybe even 200 products but get into the high 10,000s and the speed and amount of IOps would be untenable - put it this way, in a cloud solution it would cost you a fortune to run.
 
-    /// <summary>
-    /// Updates the quantities for a product.
-    /// </summary>
-    /// <param name="model">The update model.</param>
-    Task UpdateQuantities(Product model);
+I couldn't see a way to avoid this while meeting the requirements and I don't have access to the datastore. As for why the whole list of products? Well basically because otherwise I'd be conflicting `screw` with `screw1` with `screwdriver`. I could have queried on `StartsWith(name)` but unless you can use `Span<T>` that just means you're asking LINQ to do string manipulation which is incredibly inefficient.
 
-    /// <summary>
-    /// Inserts a new product
-    /// </summary>
-    /// <param name="model">The model.</param>
-    Task<Product> Insert(Product model);
-}
-```
-## Definition for EPM.Mouser.Interview.Models
-```
- public class Product
-{
-    /// <summary>
-    /// Product Id
-    /// </summary>
-    public long Id { get; set; }
+Again, LanguageExt would have allowed me to map a function using Span<T> over the top of the elevated type should that prove a better option.
 
-    /// <summary>
-    /// Product Name
-    /// </summary>
-    public string Name { get; set; }
+This is the kind of thing that's done better with a UDF on the data side. If relational databases are good for anything, it's processing batch data in a single efficient operation and they are far better at doing so than middle tier code could ever be.
 
-    /// <summary>
-    /// Quantity currently in the warehouse
-    /// </summary>
-    public int InStockQuantity { get; set; }
-
-    /// <summary>
-    /// Quantity reserved for existing orders
-    /// </summary>
-    public int ReservedQuantity { get; set; }
-}
-
-/// <summary>
-/// Reason for failed requests
-/// </summary>
-public enum ErrorReason
-{
-    QuantityInvalid,
-    NotEnoughQuantity,
-    InvalidRequest
-}
-
-/// <summary>
-/// Standard Response for Update Requests
-/// </summary>
-public class UpdateResponse
-{
-    /// <summary>
-    /// Gets or sets the error reason when Success is false.
-    /// </summary>
-    /// <value>
-    /// The error reason.
-    /// </value>
-    public ErrorReason? ErrorReason { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the update was a success.
-    /// </summary>
-    /// <value>
-    ///   <c>true</c> if success; otherwise, <c>false</c>.
-    /// </value>
-    public bool Success { get; set; }
-}
-
-/// <summary>
-/// Standard response for Create Requests
-/// </summary>
-/// <typeparam name="T"></typeparam>
-/// <seealso cref="UpdateResponse" />
-public class CreateResponse<T> : UpdateResponse
-{
-    /// <summary>
-    /// Gets or sets the model created.
-    /// </summary>
-    public T Model { get; set; }
-}
-
-public class UpdateQuantityRequest
-{
-    /// <summary>
-    /// Gets or sets the Id of the product to update.
-    /// </summary>
-    public long Id { get; set; }
-
-    /// <summary>
-    /// Gets or sets the quantity change being requested.
-    /// </summary>
-    public int Quantity { get; set; }
-}
-```
+Regardless, I quite enjoyed it.
